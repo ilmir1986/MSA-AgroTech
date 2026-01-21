@@ -1,0 +1,182 @@
+@startuml
+title «АгроТех Х» — Контейнерная диаграмма (Основное решение)
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+LAYOUT_WITH_LEGEND()
+
+Person(admin, "Администратор системы", "Управление пользователями и настройками")
+Person(manager, "Руководитель хозяйства", "Принимает управленческие решения на основе аналитики")
+Person(operator, "Оператор фермы", "Осуществляет ежедневный мониторинг состояния животных и оборудования")
+Person(vet, "Ветеринарный врач", "Контролирует здоровье поголовья, получает уведомления о проблемах")
+
+System_Boundary(platform, "АгроТех Х - Платформа мониторинга") {
+    Container_Boundary(central_systems, "Центральный сервер") {
+        Container(security_gateway, "Безопасность и авторизация", "Java/Spring Boot + OAuth2/OpenID Connect", "Управление ролями, аутентификация, авторизация для всех компонентов")
+        Container(api_gateway, "API Gateway", "Java/Spring Boot", "REST API для мобильных и веб-приложений")
+        Container(metrics_engine, "Сбор и экспорт метрик", "Java/Spring Boot", "Предоставляет базовые и пользовательские метрики для внешних систем")
+
+        Container_Boundary(agroprom_systems, "Сервисы переиспользуемые из платформы АгроПром Х") {
+            ContainerDb(core_db, "Модуль персистентности", "OLTP/OLAP storage", "Хранение OLTP, OLAP данных")
+            Container(kafka, "Модуль обмена сообщениями", "Kafka", "Асинхронная передача сообщений между центральным сервером и фермами")
+        }
+
+    }
+
+    Container_Boundary(edge_systems, "Edge-агенты на фермах") {
+        Container(video_analytics, "Видеоаналитика", "Java/Spring Boot + OpenCV/Deep Learning", "Интеграция с камерами разных производителей, обработка потокового видео в реальном времени")
+        Container(equipment_control, "Управление оборудованием", "Java/Spring Boot", "Контроль кормушек, поилок, систем фильтрации воды; прогноз расхода корма")
+        Container(edge_agents, "Агенты на фермах", "Java/Spring Boot", "Локальные агенты: работают автономно без интернета, отправляют уведомления на месте, буферизуют данные до восстановления связи")
+        Container(behavior_monitoring, "Мониторинг поведения животных", "Java/Spring Boot", "Анализ видео и датчиков для выявления беспокойства, драк, задавливания, болезней и пересчёта поголовья")
+        ContainerDb(edge_db, "Модуль персистентности", "OLTP/S3 storage", "Хранение данных, кэширование при потере связи")
+    }
+}
+
+' Внешние системы
+System_Ext(neural_provider, "Нейросеть для анализа видео с камер", "Готовые модели предоставляют партнеры")
+System_Ext(camera_systems, "Системы видеонаблюдения", "Камеры - обеспечивают видеопоток для анализа")
+System_Ext(feeding_systems, "Системы кормления", "Кормушки и поилки разных производителей")
+
+' Связи с участниками
+Rel(admin, api_gateway, "Настраивает пользователей и роли", "REST")
+Rel(manager, api_gateway, "Просматривает аналитику и отчеты", "REST")
+
+Rel(camera_systems, video_analytics, "Видеопоток для анализа", "RTSP/ONVIF")
+Rel(neural_provider, video_analytics, "Видеопоток для анализа", "RTSP/ONVIF")
+Rel(video_analytics, behavior_monitoring, "Использует результаты анализа", "HTTP")
+Rel(video_analytics, equipment_control, "Может использовать данные для адаптации", "HTTP")
+Rel(behavior_monitoring, edge_agents, "gRPC")
+Rel(equipment_control, edge_agents, "gRPC")
+Rel(edge_agents, feeding_systems, "Передача данных на оборудования", "Modbus TCP/MQTT")
+Rel(edge_agents, operator, "Push/SMS")
+Rel(edge_agents, vet, "Push/SMS")
+Rel(behavior_monitoring, kafka, "Отправляет данные", "Kafka Protocol")
+Rel(equipment_control, kafka, "Отправляет данные", "Kafka Protocol")
+Rel(kafka, metrics_engine, "Передает метрики", "Kafka Protocol")
+Rel(behavior_monitoring, edge_db, "JDBC/S3")
+Rel(equipment_control, edge_db, "JDBC/S3")
+Rel(edge_agents, edge_db, "JDBC/S3")
+Rel(video_analytics, edge_db, "JDBC/S3")
+Rel(security_gateway, api_gateway, "Защищает доступ", "OAuth2")
+Rel(api_gateway, metrics_engine, "Защищает доступ", "OAuth2")
+Rel(metrics_engine, core_db, "Сохраняет", "JDBC")
+
+' Заметка про offline-режим
+note right of edge_agents
+  Работает автономно при отсутствии связи.
+  После восстановления — синхронизация
+  с центральной системой (до 10 мин задержки).
+end note
+
+@enduml
+
+
+
+
+
+
+
+@startuml
+title «АгроТех Х» — Контейнерная диаграмма (Альтернативное решение)
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+LAYOUT_WITH_LEGEND()
+
+System_Boundary(platform, "АгроТех Х - Платформа мониторинга") {
+    Container_Boundary(central_systems, "Центральный сервер") {
+        Container(security_gateway, "Безопасность и авторизация", "", "Управление ролями, аутентификация, \n авторизация для всех компонентов") {
+            Component(security_service, "Cистема управления идентификацией и доступом", "Keycloak", "Аутентификация/Авторизация")
+        }
+
+        Container(api_gateway, "API Gateway", "Kong", "REST API для мобильных \n и веб-приложений") {
+            Component(gateway_service, "API Gateway", "Kong", "Авторизация/Фильтрация/\n Маршрутизация запросов")
+        }
+
+        Container(metrics_engine, "Сбор и экспорт метрик", "Java/Spring Boot", "Предоставляет базовые и \n пользовательские метрики \n для внешних систем") {
+            Component(metrics_service, "Сервис метрик", "Java/Spring Boot", "Предоставляет метрики \n для внешних систем")
+        }
+
+        Container_Boundary(agroprom_systems, "Сервисы переиспользуемые из платформы АгроПром Х") {
+            ContainerDb(core_db, "Модуль персистентности", "OLTP/OLAP storage", "Хранение OLTP, OLAP данных") {
+                Component(pg_core, "PostgreSQL", "OLTP storage", "Хранение транзакционных данных")
+                Component(click, "ClickHouse", "OLAP storage", "Хранение аналитических данных")
+            }
+
+            Container(central_kafka, "Модуль обмена сообщениями", "Kafka", "Асинхронная передача \n сообщений между \n центральным сервером \n и фермами") {
+                Component(central_kafka_service, "Распределённый брокер сообщений", "Kafka", "Асинхронный обмен сообщениями")
+            }
+        }
+
+        Container(analytics_service, "Сервис аналитики", "Java/Spring Boot", "Прогнозирование расхода кормов, формирование отчетов") {
+            Component(feed_analyzer, "Сервис учета \n потребления кормов", "Java/Spring Boot", "Анализ расхода кормов")
+            Component(forecasting, "Сервис прогнозирования \n потребностей", "Java/Spring Boot", "Прогнозирование потребностей")
+            Component(analytics_reporting, "Сервис отчетов", "Java/Spring Boot", "Формирование аналитических отчетов")
+            Component(data_visualization, "Сервис визуализации данных", "Power BI API", "Визуализация данных")
+        }
+    }
+
+    Container_Boundary(edge_systems, "Edge-агенты на фермах") {
+        Container(video_analytics, "Видеоаналитика", "Java/Spring Boot + OpenCV/Deep Learning", "Интеграция с камерами \n разных производителей, \n обработка потокового видео \n в реальном времени") {
+            Component(video_pre_processor, "Сервис предварительной подготовки видеопотока", "Java, OpenCV", "Декодирование/Препроцессинг/ \n Детекция объектов")
+            Component(behavior_analysis, "Сервис анализа поведения", "Python, TensorRT", "Анализ поведения животных")
+            Component(animal_counting, "Сервис подчсета животных", "Python, OpenCV", "Подсчет животных")
+            Component(health_assessment, "Сервис оценки состояния животных", "Python, Deep Learning", "Оценка состояния животных")
+            Component(alert_generation_service, "Сервис генерации оповещений", "Java", "Генерация оповещений")
+        }
+        Container(equipment_control, "Управление оборудованием", "Java/Spring Boot", "Контроль кормушек, поилок, \n систем фильтрации воды; \n прогноз расхода корма") {
+            Component(sensor_data_collector, "Сервис сбора данных с датчиков", "Java, Spring Integration", "Сбор данных с датчиков")
+            Component(equipment_control_service, "Сервис управления оборудованием", "Java, Spring Boot", "Управление оборудованием")
+            Component(resource_monitor_service, "Сервис мониторинга запасов корма и воды", "Java, Spring Boot", "Мониторинг запасов корма и воды")
+        }
+        Container(edge_agents, "Агенты на фермах", "Java/Spring Boot", "Локальные агенты: работают автономно \n без интернета,  отправляют уведомления \n на месте, буферизуют данные \n до восстановления связи") {
+            Component(message_sync, "Сервис синхронизации", "Java, Spring Kafka", "Синхронизация сообщений с центральным сервисом")
+            Component(alert_service, "Сервис отправки сообщений", "Java/Spring Boot", "Push/SMS/Email")
+            Component(equipment_interface, "Интерфейс управления оборудованием", "Java/Spring Boot", "Push/SMS/Email")
+        }
+        ContainerDb(edge_db, "Модуль персистентности", "OLTP/S3 storage", "Хранение данных, кэширование при потере связи") {
+            Component(pg_edge, "PostgreSQL", "OLTP storage", "Хранение операционных данных")
+            Component(minio, "Minio", "S3 storage", "Хранение видео и больших файлов")
+            Component(tsdb, "TimescaleDB", "База временных рядов", "Хранение временных рядов с датчиков")
+        }
+    }
+}
+
+' Внешние системы
+System_Ext(neural_provider, "Нейросеть для анализа видео с камер", "Готовые модели предоставляют партнеры")
+System_Ext(camera_systems, "Системы видеонаблюдения", "Камеры - обеспечивают видеопоток для анализа")
+System_Ext(feeding_systems, "Системы кормления", "Кормушки и поилки разных производителей")
+
+Rel(camera_systems, video_pre_processor, "Видеопоток для анализа", "RTSP/ONVIF")
+Rel(video_pre_processor, neural_provider, "Видеопоток для анализа", "RTSP/ONVIF")
+Rel(video_pre_processor, behavior_analysis, "Видеопоток для анализа", "RTSP/ONVIF")
+Rel(video_pre_processor, animal_counting, "Видеопоток для анализа", "RTSP/ONVIF")
+Rel(video_pre_processor, health_assessment, "Видеопоток для анализа", "RTSP/ONVIF")
+Rel(behavior_analysis, alert_generation_service, "Информация о нарушении", "gRPC")
+Rel(animal_counting, alert_generation_service, "Информация о нарушении", "gRPC")
+Rel(health_assessment, alert_generation_service, "Информация о нарушении", "gRPC")
+Rel(alert_generation_service, alert_service, "Сообщение", "gRPC")
+
+
+Rel(equipment_interface, feeding_systems, "Передача данных на оборудования", "Modbus TCP/MQTT")
+Rel(message_sync, central_kafka_service, "Отправляет данные", "Kafka Protocol")
+Rel(equipment_control_service, tsdb, "JDBC")
+Rel(equipment_interface, pg_edge, "JDBC")
+Rel(video_pre_processor, minio, "S3")
+Rel(gateway_service, security_service, "Защищает доступ", "OAuth2")
+Rel(gateway_service, metrics_service, "Передает метрики", "OAuth2")
+Rel(analytics_service, gateway_service, "Передает отчеты", "REST")
+
+Rel(sensor_data_collector, equipment_control_service, "gRPC")
+Rel(resource_monitor_service, equipment_control_service, "gRPC")
+Rel(equipment_control_service, equipment_interface, "gRPC")
+
+Rel(central_kafka_service, click, "REST")
+Rel(feed_analyzer, click, "REST")
+Rel(forecasting, click, "REST")
+Rel(analytics_reporting, click, "REST")
+Rel(data_visualization, click, "REST")
+
+Rel(security_service, pg_core, "JDBC")
+Rel(metrics_service, pg_core, "JDBC")
+Rel(alert_service, pg_edge, "JDBC")
+
+@enduml
