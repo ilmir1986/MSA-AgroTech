@@ -1,0 +1,53 @@
+@startuml
+title «АгроТех Х» — Диаграмма кода (C4): Сервис Видеоаналитика
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+' Контейнер как система
+Container_Boundary(video_analytics_container, "Видеоаналитика (video_analytics)") {
+    Component(video_pre_processor, "com.agrotech.video.preprocessor", "Java package", "Декодирование RTSP, препроцессинг кадров")
+    Component(behavior_analysis_adapter, "com.agrotech.video.adapter.behavior", "Java package", "Адаптер вызова Python-модели анализа поведения")
+    Component(health_assessment_adapter, "com.agrotech.video.adapter.health", "Java package", "Адаптер вызова Python-модели оценки состояния")
+    Component(animal_counter_adapter, "com.agrotech.video.adapter.counting", "Java package", "Адаптер вызова Python-модели подсчёта животных")
+    Component(alert_generator, "com.agrotech.video.alert", "Java package", "Генерация событий тревоги по бизнес-правилам")
+    Component(camera_interface, "com.agrotech.video.infra.camera", "Java package", "Интеграция с камерами (ONVIF/RTSP)")
+    Component(python_executor, "com.agrotech.video.infra.python", "Java package", "Выполнение Python-скриптов через ProcessBuilder / JNI")
+    Component(storage_interface, "com.agrotech.video.infra.storage", "Java package", "Сохранение видеофрагментов в MinIO")
+    Component(config, "com.agrotech.video.config", "Java package", "Конфигурация Spring Boot, Kafka, безопасности")
+    Component(main, "com.agrotech.video.VideoAnalyticsApplication", "Spring Boot App", "Точка входа")
+}
+
+' Внешние зависимости
+Component_Ext(python_behavior_model, "behavior_analysis.py", "Python script", "TensorRT модель: драки, беспокойство")
+Component_Ext(python_health_model, "health_assessment.py", "Python script", "DL модель: болезнь, гибель")
+Component_Ext(python_counting_model, "animal_counter.py", "Python script", "OpenCV + YOLO: подсчёт поголовья")
+Component_Ext(minio_client, "MinIO Client", "S3 API", "Хранение видео")
+Component_Ext(kafka_client, "Kafka Producer", "Kafka Client", "Публикация событий")
+
+' Связи
+Rel(camera_interface, video_pre_processor, "читает видеопоток", "RTSP")
+Rel(video_pre_processor, behavior_analysis_adapter, "передаёт кадры", "DTO")
+Rel(video_pre_processor, health_assessment_adapter, "передаёт кадры", "DTO")
+Rel(video_pre_processor, animal_counter_adapter, "передаёт кадры", "DTO")
+
+Rel(behavior_analysis_adapter, python_executor, "запускает", "subprocess")
+Rel(health_assessment_adapter, python_executor, "запускает", "subprocess")
+Rel(animal_counter_adapter, python_executor, "запускает", "subprocess")
+
+Rel(python_executor, python_behavior_model, "выполняет", "stdin/stdout")
+Rel(python_executor, python_health_model, "выполняет", "stdin/stdout")
+Rel(python_executor, python_counting_model, "выполняет", "stdin/stdout")
+
+Rel(behavior_analysis_adapter, alert_generator, "возвращает результат", "gRPC/DTO")
+Rel(health_assessment_adapter, alert_generator, "возвращает результат", "gRPC/DTO")
+Rel(animal_counter_adapter, alert_generator, "возвращает результат", "gRPC/DTO")
+
+Rel(alert_generator, kafka_client, "публикует событие", "Kafka")
+Rel(video_pre_processor, storage_interface, "сохраняет фрагмент", "S3")
+Rel(storage_interface, minio_client, "использует", "S3 API")
+
+Rel(main, config, "загружает", "application.yml")
+Rel(main, camera_interface, "инициализирует", "Spring Bean")
+Rel(main, alert_generator, "инициализирует", "Spring Bean")
+
+@enduml
